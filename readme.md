@@ -38,3 +38,23 @@ Once all files are written make it done as below
 ```
 await zipper.done();
 ```
+
+
+# Example
+
+## Code
+Html file:  index.html and script: index.js
+
+## How to run
+
+*Follow the below steps to run example
+
+- Install npm dependencies using below command
+
+```
+npm install
+```
+- Run application
+```
+npm run dev
+```
