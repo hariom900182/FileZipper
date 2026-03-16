@@ -5,12 +5,13 @@ class Zipper {
     writer;
     nextHeaderOffset;
     currentHeaderOffset;
+    currentHeaderSize;
     filelist;
     headerlist;
     cdhList;
     ecdr;
     cdrOffset;
-    currentOffset;
+    endOffset;
     constructor(options) {
         this.options = options || {}
         this.init();
@@ -23,9 +24,10 @@ class Zipper {
         this.ecdr = {};
         this.writerOffset = 0;
         this.cdrOffset = 0;
-        this.currentOffset = 0;
+        this.endOffset = 0;
         this.nextHeaderOffset = 0;
         this.currentHeaderOffset = 0;
+        this.currentHeaderSize = 0;
     }
 
     async create(filename, descripion) {
@@ -42,10 +44,38 @@ class Zipper {
     async writeFile(filename, content) {
         const headerSize = await this.writefileHeader(filename, content);
         const filesize = await this.writefileContent(content);
-        this.filelist.push({ filename: filename, size: filesize, headerOffset: this.nextHeaderOffset });
-        this.currentOffset = this.nextHeaderOffset;
+        this.endOffset = headerSize + filesize;
+        this.filelist.push({ filename: filename, size: filesize, headerOffset: this.nextHeaderOffset, headerSize: headerSize });
+        this.currentHeaderOffset = this.nextHeaderOffset;
         this.nextHeaderOffset = this.nextHeaderOffset + headerSize + filesize;
         this.cdrOffset = this.cdrOffset + headerSize + filesize;
+    }
+
+    async appendToFile(content) {
+        const size = await this.writefileContent(content);
+        this.endOffset = this.endOffset + size;
+        const updatedSize = this.filelist[this.filelist.length - 1].size + size;
+        this.filelist[this.filelist.length - 1].size = updatedSize //update the file size
+
+        //update header
+        const headerFileSizeOffset = this.filelist[this.filelist.length - 1].headerOffset + 18;
+        await this.writer.seek(headerFileSizeOffset);
+
+
+        const headerbuffer = new ArrayBuffer(8);
+        const headerbufferView = new DataView(headerbuffer);
+        this.writeUint32(headerbufferView, 0, updatedSize);//compressed 
+        this.writeUint32(headerbufferView, 4, updatedSize);//uncompressed
+
+        const sizeHeader = new Uint8Array(headerbuffer);
+        await this.writer.write(sizeHeader) //writer to file
+
+        //at end move to last
+        //const endOffset = this.filelist[this.filelist.length - 1].headerOffset + this.filelist[this.filelist.length - 1].headerSize + this.filelist[this.filelist.length - 1].size;
+        await this.writer.seek(this.endOffset)
+
+        //update cdrheader
+        this.cdrOffset = this.cdrOffset + size
     }
 
 
@@ -53,6 +83,7 @@ class Zipper {
         let size = 0;
         for (let i = 0; i < this.filelist.length; i++) {
             size = size + await this.writeFileCDR(this.filelist[i].filename, this.filelist[i].size, this.filelist[i].headerOffset);
+            this.endOffset = this.endOffset + size;
         }
         await this.writeECDR(size, this.cdrOffset, this.filelist.length);
         await this.writer.close();
@@ -141,6 +172,7 @@ class Zipper {
         this.writeUint16(ecdrView, 20, 0); //comment length
         const ecdr = new Uint8Array(ecdrBuffer);
         await this.writer.write(ecdr);
+        this.endOffset = this.endOffset + 22;
     }
 
     async writefileContent(content) {

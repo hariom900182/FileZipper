@@ -7,6 +7,7 @@ const listContainer = document.getElementById("file-list");
 listContainer.innerHTML = "No file selected";
 const zipper = new Zipper();
 
+const MAX_WRITE_SIZE = 10 * 1024.0;
 
 input.addEventListener("change", (event) => {
     if (input.files.length == 0) {
@@ -31,15 +32,43 @@ generateBtn.addEventListener("click", async () => {
     if (input.files.length == 0) {
         return;
     }
+
     await zipper.create("sample.zip", "sample")
 
     for (let i = 0; i < input.files.length; i++) {
         const file = input.files[i];
+        const size = file.size;
+        const arr = calcuateSliceArray(size);
         const name = file.name;
-        const uint8FileData = await file.arrayBuffer();
-        await zipper.writeFile(name, uint8FileData);
+        for (let i = 0; i < arr.length; i++) {
+            const blob = file.slice(arr[i].start, arr[i].end);
+            const buffer = await blob.arrayBuffer();
+            const uint8View = new Uint8Array(buffer);
+            if (i == 0) {
+                await zipper.writeFile(name, uint8View);
+                continue;
+            }
+            await zipper.appendToFile(uint8View)
+        }
+        //console.log("file: ", file.name, ", slices: ", arr);
+        //    
+        //     const uint8FileData = await file.arrayBuffer();
     }
     await zipper.done();
+
+
+    input.value = null;
 })
 
-
+function calcuateSliceArray(size) {
+    let arr = [];
+    let offset = 0;
+    const itrs = Math.ceil(size / MAX_WRITE_SIZE)
+    for (let i = 0; i < itrs; i++) {
+        const nextSize = size <= MAX_WRITE_SIZE ? size : MAX_WRITE_SIZE;
+        arr.push({ start: offset, end: offset + nextSize });
+        offset = offset + nextSize;
+        size = size - nextSize;
+    }
+    return arr;
+}
